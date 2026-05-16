@@ -17,9 +17,8 @@
           return {
             pin: String(row.position || ""),
             name: String(row.short_name || ""),
-            function: selectedFunctions.length > 0 ? selectedFunctions[0] : "",
             functions: selectedFunctions,
-            refName: String(row.internal_name || ""),
+            comment: String(row.internal_name || ""),
           };
         });
 
@@ -136,7 +135,9 @@
 
       for (const node of parsed.rowNodes) {
         const importedName = String(node.name ?? node.short_name ?? "").trim();
-        const importedRefName = String(node.refName ?? node.ref_name ?? "").trim();
+        const importedComment = String(
+          node.comment ?? node.refName ?? node.ref_name ?? node.internal_name ?? ""
+        ).trim();
         const importedPin = String(node.pin ?? node.position ?? "").trim();
         const fallbackName = importedPin;
         const displayName = importedName || fallbackName || "UNMAPPED";
@@ -156,11 +157,11 @@
           nextUnmappedRows.push({
             row_id: unmappedRowId,
             short_name: displayName,
-            internal_name: importedRefName,
+            internal_name: importedComment,
           });
           nextReviewByRowId[unmappedRowId] = true;
-          if (importedRefName) {
-            nextNamesByRowId[unmappedRowId] = importedRefName;
+          if (importedComment) {
+            nextNamesByRowId[unmappedRowId] = importedComment;
           }
           unmappedRows += 1;
           continue;
@@ -178,8 +179,15 @@
         if (Array.isArray(node.functions)) {
           importedCandidates.push(...node.functions);
         }
-        if (node.function != null && String(node.function).trim() !== "") {
+        if (Array.isArray(node.function)) {
+          importedCandidates.push(...node.function);
+        } else if (node.function != null && String(node.function).trim() !== "") {
           importedCandidates.push(node.function);
+        }
+        if (Array.isArray(node.selected_function)) {
+          importedCandidates.push(...node.selected_function);
+        } else if (node.selected_function != null && String(node.selected_function).trim() !== "") {
+          importedCandidates.push(node.selected_function);
         }
 
         const requestedFunctions = ctx.normalizeSelectedFunctionList(importedCandidates);
@@ -192,8 +200,8 @@
           }
         }
 
-        if (importedRefName) {
-          nextNamesByRowId[rowId] = importedRefName;
+        if (importedComment) {
+          nextNamesByRowId[rowId] = importedComment;
         }
       }
 
