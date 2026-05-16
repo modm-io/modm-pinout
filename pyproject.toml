@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69", "setuptools-scm[toml]>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modm-pinout"
+dynamic = ["version"]
+description = "Static pin mapping site generator for modm device definitions"
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["embedded", "modm", "pinout", "generator", "static-site"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Code Generators",
+  "Topic :: Software Development :: Embedded Systems",
+]
+dependencies = [
+  "jinja2>=3.1",
+  "modm-devices>=0.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "setuptools-scm[toml]>=8",
+  "twine>=5.0",
+]
+
+[project.scripts]
+modm_pinout = "modm_pinout:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+modm_pinout = [
+  "assets/scripts/*.js",
+  "assets/styles/*.css",
+  "templates/*.j2",
+]
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+tag_regex = "^(?:v)?(?P<version>.+)$"

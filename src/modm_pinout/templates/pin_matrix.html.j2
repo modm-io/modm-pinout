@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ partname }} Pin Matrix</title>
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css">
+  <link rel="stylesheet" href="{{ stylesheet_href }}">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <nav class="subnav"><a class="back-link" href="{{ index_href }}">All devices</a></nav>
+        <h1 class="title">{{ partname | upper }} Pin Mapping</h1>
+        <div class="meta">{% if has_package %}Package: <strong>{{ package_name }}</strong> | {% endif %}Pins: {{ pin_count }}</div>
+      </div>
+    </header>
+
+    <section class="controls">
+      <button id="copy-share-url" type="button">Copy Share URL</button>
+      <button id="export-json" type="button">Export JSON</button>
+      <button id="import-json" type="button">Import JSON</button>
+      <input id="import-json-input" type="file" accept=".json,application/json,text/json" hidden>
+      <span id="save-status" class="save-status" aria-live="polite"></span>
+    </section>
+
+    {% if has_package %}
+    <section class="package-card" aria-labelledby="package-title">
+      <div class="package-card-header">
+        <div>
+          <h2 id="package-title" class="section-title">Package Layout</h2>
+          <div id="package-subtitle" class="package-subtitle"></div>
+        </div>
+        <div id="package-view-controls" class="package-view-controls" aria-label="Package zoom controls"></div>
+      </div>
+      <div id="package-diagram" class="package-diagram" role="img" aria-label="Graphical package layout"></div>
+    </section>
+    {% endif %}
+
+    <section id="pin-matrix"></section>
+
+    <p class="hint">
+      {% if has_package %}
+      The first two columns are fixed package pin number and full pin name. Manual Selection supports multi-select using merged alternate+additional functions.
+      {% else %}
+      The first two columns show the available pin identifiers and names derived from the device data. Manual Selection supports multi-select using merged alternate+additional functions.
+      {% endif %}
+      Add regex columns to test patterns against the same merged function list per pin. Matches are rendered with line breaks. JSON export/import includes Pin, Name, Function, Ref Name, and regex column definitions. Share URL copies the current compact state into a compressed URL fragment for this device page.
+      Name-based import marks ambiguous or unmapped rows in bold; click the Pin cell to mark reviewed rows as OK.
+    </p>
+  </main>
+
+  <script id="modm-pinout-bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xregexp/5.1.1/xregexp-all.min.js"></script>
+  {% for script_src in script_sources %}
+  <script src="{{ script_src }}"></script>
+  {% endfor %}
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>modm Pin Mapping Search</title>
+  <link rel="stylesheet" href="{{ stylesheet_href }}">
+</head>
+<body>
+  <main class="page">
+    <section class="search-shell" aria-label="Device search">
+      <div class="search-panel">
+        <h1 class="title">modm Pin Mapping</h1>
+        <p class="search-copy">Type the device prefix and open the matching page.</p>
+        <form class="search-form" id="device-search-form" autocomplete="off">
+          <label class="search-label" for="device-search-input">Device</label>
+          <input
+            id="device-search-input"
+            class="search-input"
+            type="search"
+            placeholder="atmega328p"
+            spellcheck="false"
+            autofocus
+          >
+          <label class="search-label" for="device-search-results">Matches</label>
+          <select id="device-search-results" class="search-results" size="12"></select>
+          <div class="search-meta" id="device-search-meta">{{ device_count }} devices indexed{% if generated_at %} | Generated {{ generated_at }}{% endif %}</div>
+          <button class="search-button" type="submit">Open device page</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script id="device-search-data" type="application/json">{{ devices | tojson }}</script>
+  <script>
+    (() => {
+      const dataNode = document.getElementById("device-search-data");
+      const form = document.getElementById("device-search-form");
+      const input = document.getElementById("device-search-input");
+      const results = document.getElementById("device-search-results");
+      const meta = document.getElementById("device-search-meta");
+      const devices = JSON.parse(dataNode.textContent).map((device) => ({
+        ...device,
+        searchKey: String(device.chip_id || "").toLowerCase(),
+        label: [device.chip_id, device.package_name].filter(Boolean).join(" | "),
+      }));
+
+      function filteredDevices(query) {
+        const normalizedQuery = query.trim().toLowerCase();
+        if (!normalizedQuery) {
+          return devices;
+        }
+
+        return devices.filter((device) => device.searchKey.startsWith(normalizedQuery));
+      }
+
+      function renderOptions(items) {
+        results.textContent = "";
+        for (const device of items.slice(0, 100)) {
+          const option = document.createElement("option");
+          option.value = device.page_href;
+          option.textContent = device.label;
+          results.append(option);
+        }
+
+        if (results.options.length) {
+          results.selectedIndex = 0;
+        }
+      }
+
+      function update() {
+        const matches = filteredDevices(input.value);
+        renderOptions(matches);
+        const shown = Math.min(matches.length, 100);
+        const suffix = matches.length > 100 ? `, showing first ${shown}` : "";
+        meta.textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}${suffix}`;
+      }
+
+      function navigateToSelection() {
+        const selected = results.selectedOptions[0];
+        if (!selected) {
+          return;
+        }
+
+        window.location.href = selected.value;
+      }
+
+      input.addEventListener("input", update);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" && results.options.length) {
+          event.preventDefault();
+          results.focus();
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          navigateToSelection();
+        }
+      });
+
+      results.addEventListener("change", navigateToSelection);
+      results.addEventListener("dblclick", navigateToSelection);
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        navigateToSelection();
+      });
+
+      update();
+    })();
+  </script>
+</body>
+</html>
