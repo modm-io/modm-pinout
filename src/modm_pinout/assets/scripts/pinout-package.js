@@ -145,7 +145,7 @@
           shortName: String(pin && pin.short_name || "").trim(),
           availableFunctions,
           selectedFunctions: [],
-          displayFunctions: availableFunctions,
+          displayFunctions: [],
           comment: "",
         }];
       }
@@ -162,7 +162,7 @@
           shortName: String(entry.short_name || "").trim(),
           availableFunctions,
           selectedFunctions,
-          displayFunctions: selectedFunctions.length > 0 ? selectedFunctions : availableFunctions,
+          displayFunctions: selectedFunctions,
           comment: typeof entry.internal_name === "string" ? entry.internal_name.trim() : "",
         };
       });
@@ -179,7 +179,7 @@
         rowFunctions.length > 0 ? rowFunctions : (Array.isArray(pin.functions) ? pin.functions.slice() : []),
       );
       const selectedFunctions = dedupeStrings(rowStates.flatMap((state) => state.selectedFunctions));
-      const displayFunctions = selectedFunctions.length > 0 ? selectedFunctions : availableFunctions;
+      const displayFunctions = selectedFunctions;
       const comments = dedupeStrings(rowStates.map((state) => state.comment));
       const names = rowStates
         .map((state) => String(state.shortName || "").trim())
@@ -216,42 +216,54 @@
 
     ctx.packageTooltipFields = function packageTooltipFields(pin) {
       const details = ctx.packagePinState(pin);
-      const fields = [
-        { label: "Pin", value: String(pin.position || "-") },
-        {
-          label: details.rowStates.length > 1 ? "Names" : "Name",
-          value: details.names.length > 0 ? details.names.join(" ") : String(pin.short_name || "-"),
-        },
-      ];
-
       if (details.rowStates.length > 1) {
-        fields.push({
-          label: "Table entries",
-          value: details.rowEntries
-            .map((entry) => `${entry.position} ${entry.short_name}`.trim())
-            .join(" | "),
+        const columns = [];
+        details.rowStates.forEach((rowState, index) => {
+          const rowLabel = rowState.shortName || `Entry ${index + 1}`;
+          const entries = [];
+          if (rowState.displayFunctions.length > 0) {
+            entries.push({
+              label: rowState.displayFunctions.length === 1 ? "Function" : "Functions",
+              value: rowState.displayFunctions.join(", "),
+            });
+          }
+          if (rowState.comment) {
+            entries.push({
+              label: "Comment",
+              value: rowState.comment,
+            });
+          }
+          if (entries.length > 0) {
+            columns.push({
+              label: rowLabel,
+              entries,
+            });
+          }
         });
+
+        return {
+          kind: "table",
+          columns,
+        };
       }
 
-      if (details.rowStates.length > 1) {
-        details.rowStates.forEach((rowState, index) => {
-          fields.push({
-            label: rowState.shortName || `Entry ${index + 1}`,
-            value: rowState.displayFunctions.length > 0 ? rowState.displayFunctions.join(", ") : "-",
-          });
-        });
-      } else {
+      const fields = [];
+      if (details.displayFunctions.length > 0) {
         fields.push({
           label: details.displayFunctions.length === 1 ? "Function" : "Functions",
-          value: details.displayFunctions.length > 0 ? details.displayFunctions.join(", ") : "-",
+          value: details.displayFunctions.join(", "),
         });
       }
-
-      fields.push({
-        label: details.comments.length > 1 ? "Comments" : "Comment",
-        value: details.comments.length > 0 ? details.comments.join(" | ") : "-",
-      });
-      return fields;
+      if (details.comments.length > 0) {
+        fields.push({
+          label: details.comments.length > 1 ? "Comments" : "Comment",
+          value: details.comments.join(" | "),
+        });
+      }
+      return {
+        kind: "rows",
+        fields,
+      };
     };
 
     ctx.packagePins = function packagePins() {
@@ -463,12 +475,23 @@
         return;
       }
 
-      const textNode = svgNode("text", {
+      const textAttributes = {
         x: options.x,
         y: options.y,
         class: "package-pin-name package-pin-name-side",
         "text-anchor": options.anchor,
-      });
+      };
+      if (typeof (options && options.transform) === "string" && options.transform) {
+        textAttributes.transform = options.transform;
+      }
+      if (typeof (options && options.dominantBaseline) === "string" && options.dominantBaseline) {
+        textAttributes["dominant-baseline"] = options.dominantBaseline;
+      }
+      if (Number.isFinite(options && options.fontSize) && options.fontSize > 0) {
+        textAttributes["font-size"] = options.fontSize;
+      }
+
+      const textNode = svgNode("text", textAttributes);
       textNode.textContent = label;
       svg.append(textNode);
     };
@@ -742,6 +765,7 @@
         return;
       }
 
+      packageUi.tooltip.classList.remove("package-tooltip-table-layout");
       packageUi.tooltip.hidden = true;
       packageUi.tooltip.replaceChildren();
       ctx.resetPackageDetail();
@@ -753,23 +777,81 @@
         return;
       }
 
+      const tooltipContent = ctx.packageTooltipFields(pin);
+      const isTable = tooltipContent && tooltipContent.kind === "table";
+      const tableColumns = isTable && Array.isArray(tooltipContent.columns) ? tooltipContent.columns : [];
+      const fields = !isTable && tooltipContent && Array.isArray(tooltipContent.fields) ? tooltipContent.fields : [];
+      if ((isTable && tableColumns.length === 0) || (!isTable && fields.length === 0)) {
+        ctx.hidePackageTooltip();
+        return;
+      }
+
       const tooltip = packageUi.tooltip;
       tooltip.replaceChildren();
-      for (const field of ctx.packageTooltipFields(pin)) {
-        const rowNode = document.createElement("div");
-        rowNode.className = "package-tooltip-row";
+      tooltip.classList.toggle("package-tooltip-table-layout", isTable);
+      if (isTable) {
+        const tableNode = document.createElement("table");
+        tableNode.className = "package-tooltip-table";
 
-        const labelNode = document.createElement("div");
-        labelNode.className = "package-tooltip-label";
-        labelNode.textContent = field.label;
-        rowNode.append(labelNode);
+        const headerNode = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        for (const column of tableColumns) {
+          const cellNode = document.createElement("th");
+          cellNode.className = "package-tooltip-table-header";
+          cellNode.scope = "col";
+          cellNode.textContent = column.label;
+          headerRow.append(cellNode);
+        }
+        headerNode.append(headerRow);
+        tableNode.append(headerNode);
 
-        const valueNode = document.createElement("div");
-        valueNode.className = "package-tooltip-value";
-        valueNode.textContent = field.value;
-        rowNode.append(valueNode);
+        const bodyNode = document.createElement("tbody");
+        const valueRow = document.createElement("tr");
+        for (const column of tableColumns) {
+          const cellNode = document.createElement("td");
+          cellNode.className = "package-tooltip-table-value";
 
-        tooltip.append(rowNode);
+          const stackNode = document.createElement("div");
+          stackNode.className = "package-tooltip-table-stack";
+          for (const entry of column.entries || []) {
+            const rowNode = document.createElement("div");
+            rowNode.className = "package-tooltip-row package-tooltip-table-entry";
+
+            const labelNode = document.createElement("div");
+            labelNode.className = "package-tooltip-label";
+            labelNode.textContent = entry.label;
+            rowNode.append(labelNode);
+
+            const valueNode = document.createElement("div");
+            valueNode.className = "package-tooltip-value";
+            valueNode.textContent = entry.value;
+            rowNode.append(valueNode);
+
+            stackNode.append(rowNode);
+          }
+          cellNode.append(stackNode);
+          valueRow.append(cellNode);
+        }
+        bodyNode.append(valueRow);
+        tableNode.append(bodyNode);
+        tooltip.append(tableNode);
+      } else {
+        for (const field of fields) {
+          const rowNode = document.createElement("div");
+          rowNode.className = "package-tooltip-row";
+
+          const labelNode = document.createElement("div");
+          labelNode.className = "package-tooltip-label";
+          labelNode.textContent = field.label;
+          rowNode.append(labelNode);
+
+          const valueNode = document.createElement("div");
+          valueNode.className = "package-tooltip-value";
+          valueNode.textContent = field.value;
+          rowNode.append(valueNode);
+
+          tooltip.append(rowNode);
+        }
       }
 
       ctx.updatePackageDetail(ctx.describePackagePin(pin));
@@ -1006,6 +1088,8 @@
       const bodyY = 60;
       const pinLength = 34;
       const pinThickness = Math.max(10, Math.min(18, (bodyHeight - 36) / pinsPerSide * 0.48));
+      const innerNumberInset = 14;
+      const outsideNameGap = 10;
       const leftPins = pins.slice(0, pinsPerSide);
       const rightPins = pins.slice(pinsPerSide).reverse();
       const pitch = leftPins.length > 1 ? (bodyHeight - 36) / (leftPins.length - 1) : 0;
@@ -1044,18 +1128,18 @@
           ctx.bindPackagePinInteractions(pinNode, pin);
 
           const textNode = svgNode("text", {
-            x: side === "left" ? x - 10 : x + pinLength + 10,
+            x: side === "left" ? bodyX + innerNumberInset : bodyX + bodyWidth - innerNumberInset,
             y: y + pinThickness / 2 + 4,
             class: "package-pin-position",
-            "text-anchor": side === "left" ? "end" : "start",
+            "text-anchor": side === "left" ? "start" : "end",
           });
           textNode.textContent = pin.position;
           svg.append(textNode);
 
           ctx.renderOutsidePinName(svg, pin, {
-            x: side === "left" ? bodyX + 8 : bodyX + bodyWidth - 8,
+            x: side === "left" ? x - outsideNameGap : x + pinLength + outsideNameGap,
             y: y + pinThickness / 2 + 4,
-            anchor: side === "left" ? "start" : "end",
+            anchor: side === "left" ? "end" : "start",
           });
         });
       };
@@ -1066,10 +1150,7 @@
     };
 
     ctx.renderEdgePackage = function renderEdgePackage(svg, pins, packageName) {
-      const viewSize = 520;
-      const bodyX = 120;
-      const bodyY = 120;
-      const bodySize = 280;
+      const viewSize = 560;
       const pinDepth = 24;
       const baseCount = Math.floor(pins.length / 4);
       const remainder = pins.length % 4;
@@ -1085,6 +1166,18 @@
         groups.push(pins.slice(cursor, cursor + count));
         cursor += count;
       }
+
+      const maxPinsPerSide = Math.max(1, ...counts);
+      const targetPitch = 24;
+      const cornerInset = 36;
+      const bodySize = clamp(
+        cornerInset * 2 + Math.max(0, maxPinsPerSide - 1) * targetPitch,
+        300,
+        448,
+      );
+      const bodyX = (viewSize - bodySize) / 2;
+      const bodyY = (viewSize - bodySize) / 2;
+      const nameGap = 14;
 
       svg.append(svgNode("rect", {
         x: bodyX,
@@ -1115,12 +1208,39 @@
           continue;
         }
 
-        const pitch = bodySize / edgePins.length;
-        const pinSpan = Math.max(10, Math.min(28, pitch * 0.72));
-        const showLabel = pitch >= 20;
-        const showName = pitch >= 26;
+        const usableSpan = Math.max(0, bodySize - cornerInset * 2);
+        const pitch = edgePins.length > 1 ? usableSpan / (edgePins.length - 1) : 0;
+        const referencePitch = pitch > 0 ? pitch : targetPitch;
+        const pinSpan = clamp(referencePitch * 0.72, 10, 28);
+        const positionFontSize = clamp(referencePitch * 0.42, 5.5, 11);
+        const innerNumberInset = clamp(positionFontSize + 5, 12, 18);
 
         edgePins.forEach((pin, index) => {
+          const label = ctx.packagePinLabel(pin);
+          const nameFontSize = !label
+            ? 0
+            : clamp(
+              edge.side === "top" || edge.side === "bottom"
+                ? (pitch * 0.92) / Math.max(label.length * 0.58, 1)
+                : pitch * 0.52,
+              4.5,
+              9,
+            );
+          const positionText = String(pin.position || "");
+          const positionAdvance = Math.max(
+            positionFontSize,
+            typeof ctx.measureTextWidthPx === "function"
+              ? ctx.measureTextWidthPx(positionText) * (positionFontSize / 13)
+              : positionText.length * positionFontSize * 0.66,
+          );
+          const nameAdvance = !label
+            ? 0
+            : Math.max(
+              nameFontSize,
+              typeof ctx.measureTextWidthPx === "function"
+                ? ctx.measureTextWidthPx(label) * (nameFontSize / 13)
+                : label.length * nameFontSize * 0.66,
+            );
           let x = bodyX;
           let y = bodyY;
           let width = pinSpan;
@@ -1130,41 +1250,59 @@
           let nameX = 0;
           let nameY = 0;
           let nameAnchor = "middle";
+          let positionAnchor = "middle";
+          let textTransform = "";
+          let nameTransform = "";
+          let positionDominantBaseline = "";
+          let nameDominantBaseline = "";
+          const slotOffset = edgePins.length > 1
+            ? cornerInset + pitch * index
+            : bodySize / 2;
 
           if (edge.side === "top") {
-            x = bodyX + pitch * index + (pitch - pinSpan) / 2;
+            x = bodyX + slotOffset - pinSpan / 2;
             y = bodyY - pinDepth;
             textX = x + width / 2;
-            textY = y - 6;
+            textY = bodyY + innerNumberInset + positionAdvance / 2;
             nameX = x + width / 2;
-            nameY = bodyY + 14;
+            nameY = y - nameGap - nameAdvance / 2;
+            textTransform = `rotate(-90 ${textX} ${textY})`;
+            nameTransform = `rotate(-90 ${nameX} ${nameY})`;
+            positionDominantBaseline = "middle";
+            nameDominantBaseline = "middle";
           } else if (edge.side === "right") {
             x = bodyX + bodySize;
-            y = bodyY + pitch * index + (pitch - pinSpan) / 2;
+            y = bodyY + slotOffset - pinSpan / 2;
             width = pinDepth;
             height = pinSpan;
-            textX = x + width + 10;
+            textX = bodyX + bodySize - innerNumberInset;
             textY = y + height / 2 + 4;
-            nameX = bodyX + bodySize - 8;
-            nameY = y + height / 2 + 4;
-            nameAnchor = "end";
-          } else if (edge.side === "bottom") {
-            x = bodyX + bodySize - pitch * (index + 1) + (pitch - pinSpan) / 2;
-            y = bodyY + bodySize;
-            textX = x + width / 2;
-            textY = y + height + 14;
-            nameX = x + width / 2;
-            nameY = bodyY + bodySize - 8;
-          } else {
-            x = bodyX - pinDepth;
-            y = bodyY + bodySize - pitch * (index + 1) + (pitch - pinSpan) / 2;
-            width = pinDepth;
-            height = pinSpan;
-            textX = x - 10;
-            textY = y + height / 2 + 4;
-            nameX = bodyX + 8;
+            nameX = x + width + nameGap;
             nameY = y + height / 2 + 4;
             nameAnchor = "start";
+            positionAnchor = "end";
+          } else if (edge.side === "bottom") {
+            x = bodyX + bodySize - slotOffset - pinSpan / 2;
+            y = bodyY + bodySize;
+            textX = x + width / 2;
+            textY = bodyY + bodySize - innerNumberInset - positionAdvance / 2;
+            nameX = x + width / 2;
+            nameY = y + height + nameGap + nameAdvance / 2;
+            textTransform = `rotate(90 ${textX} ${textY})`;
+            nameTransform = `rotate(90 ${nameX} ${nameY})`;
+            positionDominantBaseline = "middle";
+            nameDominantBaseline = "middle";
+          } else {
+            x = bodyX - pinDepth;
+            y = bodyY + bodySize - slotOffset - pinSpan / 2;
+            width = pinDepth;
+            height = pinSpan;
+            textX = bodyX + innerNumberInset;
+            textY = y + height / 2 + 4;
+            nameX = x - nameGap;
+            nameY = y + height / 2 + 4;
+            nameAnchor = "end";
+            positionAnchor = "start";
           }
 
           const pinNode = svgNode("rect", {
@@ -1186,22 +1324,32 @@
           svg.append(pinNode);
           ctx.bindPackagePinInteractions(pinNode, pin);
 
-          if (showLabel) {
+          if (positionFontSize >= 5.5) {
             const textNode = svgNode("text", {
               x: textX,
               y: textY,
               class: "package-pin-position",
-              "text-anchor": edge.side === "left" ? "end" : edge.side === "right" ? "start" : "middle",
+              "font-size": positionFontSize,
+              "text-anchor": positionAnchor,
             });
+            if (textTransform) {
+              textNode.setAttribute("transform", textTransform);
+            }
+            if (positionDominantBaseline) {
+              textNode.setAttribute("dominant-baseline", positionDominantBaseline);
+            }
             textNode.textContent = pin.position;
             svg.append(textNode);
           }
 
-          if (showName) {
+          if (nameFontSize >= 4.5) {
             ctx.renderOutsidePinName(svg, pin, {
               x: nameX,
               y: nameY,
               anchor: nameAnchor,
+              fontSize: nameFontSize,
+              transform: nameTransform,
+              dominantBaseline: nameDominantBaseline,
             });
           }
         });
@@ -1308,7 +1456,7 @@
       label: "Edge package",
       category: "edge",
       defaultWidth(packageModel) {
-        return clamp(620 + Math.max(0, packageModel.pins.length - 64) * 1.2, 620, 980);
+        return clamp(660 + Math.max(0, packageModel.pins.length - 64) * 1.2, 660, 1040);
       },
       zoomConfig() {
         return { min: 0.7, max: 2.0, step: 0.15 };

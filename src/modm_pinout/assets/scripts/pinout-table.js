@@ -157,6 +157,14 @@
       });
     };
 
+    ctx.waitForTableRenderTick = function waitForTableRenderTick() {
+      return new Promise((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(resolve);
+        });
+      });
+    };
+
     ctx.applyStateToTable = async function applyStateToTable() {
       if (!ctx.table) {
         return;
@@ -185,6 +193,8 @@
         await Promise.resolve(response);
       }
 
+      await ctx.waitForTableRenderTick();
+      ctx.rebindTableHeaderInteractions();
       ctx.recomputeRegexCells();
     };
 
@@ -305,6 +315,7 @@
       });
 
       await ctx.waitForTableBuilt(ctx.table);
+      await ctx.waitForTableRenderTick();
 
       ctx.table.on("cellEdited", (cell) => {
         const row = cell.getRow().getData();

@@ -305,6 +305,10 @@ body {
   pointer-events: none;
 }
 
+.package-tooltip.package-tooltip-table-layout {
+  max-width: min(560px, calc(100vw - 32px));
+}
+
 .package-tooltip-row {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -321,6 +325,47 @@ body {
 .package-tooltip-value {
   color: var(--text);
   min-width: 0;
+  white-space: pre-line;
+}
+
+.package-tooltip-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.package-tooltip-table-header,
+.package-tooltip-table-value {
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.package-tooltip-table-header {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.package-tooltip-table-value {
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.package-tooltip-table-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.package-tooltip-table-entry {
+  font-size: 0.88rem;
+}
+
+.package-tooltip-table-header + .package-tooltip-table-header,
+.package-tooltip-table-value + .package-tooltip-table-value {
+  border-left: 1px solid var(--border);
 }
 
 .package-function-picker {
