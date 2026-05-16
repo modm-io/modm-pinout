@@ -82,7 +82,7 @@
           return;
         }
 
-        window.location.href = selected.value;
+        window.location.href = selected.value.replace(/\/?index\.html$/, "");
       }
 
       input.addEventListener("input", update);

@@ -81,7 +81,7 @@ def _render_template(template_name: str, context: dict[str, Any]) -> str:
 
 
 def _device_page_path(site_dir: Path, chip_id: str) -> Path:
-    return site_dir / "devices" / f"{chip_id}.html"
+    return site_dir / chip_id / "index.html"
 
 
 def _index_page_path(site_dir: Path) -> Path:
