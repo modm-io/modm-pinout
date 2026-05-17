@@ -31,8 +31,7 @@
 
     ctx.isPackageHeaderHighlightField = function isPackageHeaderHighlightField(field) {
       const normalizedField = String(field || "");
-      return normalizedField === "selected_function"
-        || normalizedField === "internal_name"
+      return ctx.BASE_REGEX_FILTER_FIELDS.includes(normalizedField)
         || /^regex_\d+$/.test(normalizedField);
     };
 
@@ -117,8 +116,9 @@
     };
 
     ctx.bindAllPackageHeaderHighlights = function bindAllPackageHeaderHighlights() {
-      ctx.bindPackageHeaderHighlight("selected_function");
-      ctx.bindPackageHeaderHighlight("internal_name");
+      for (const field of ctx.BASE_REGEX_FILTER_FIELDS) {
+        ctx.bindPackageHeaderHighlight(field);
+      }
       for (const meta of state.regexColumns) {
         ctx.bindPackageHeaderHighlight(meta.field);
       }

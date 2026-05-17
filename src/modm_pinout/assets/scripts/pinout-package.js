@@ -609,6 +609,31 @@
       return { zoomOutButton, zoomInButton, zoomLabel };
     };
 
+    ctx.syncPackageViewportResizeHandle = function syncPackageViewportResizeHandle() {
+      const packageUi = ctx.packageUi || null;
+      if (!packageUi || !packageUi.resizeHandle) {
+        return;
+      }
+
+      const bounds = ctx.packageViewportHeightBounds();
+      const height = Math.round(packageUi.viewportHeight || bounds.min);
+      packageUi.resizeHandle.setAttribute("aria-valuemin", String(bounds.min));
+      packageUi.resizeHandle.setAttribute("aria-valuemax", String(bounds.max));
+      packageUi.resizeHandle.setAttribute("aria-valuenow", String(height));
+      packageUi.resizeHandle.setAttribute("aria-valuetext", `Package viewport height ${height} pixels`);
+    };
+
+    ctx.refitPackageToViewport = function refitPackageToViewport() {
+      const packageUi = ctx.packageUi || null;
+      if (!packageUi || !packageUi.svg) {
+        return;
+      }
+
+      const fallbackWidth = packageUi.defaultBaseWidth || packageUi.baseWidth;
+      packageUi.baseWidth = ctx.fitPackageBaseWidthToViewport(fallbackWidth);
+      ctx.applyPackageZoom();
+    };
+
     ctx.packageViewportHeightBounds = function packageViewportHeightBounds() {
       return {
         min: 360,
@@ -626,6 +651,132 @@
       const height = clamp(nextHeight, bounds.min, bounds.max);
       packageUi.viewportHeight = height;
       packageUi.mountNode.style.height = `${Math.round(height)}px`;
+      ctx.refitPackageToViewport();
+      ctx.syncPackageViewportResizeHandle();
+    };
+
+    ctx.finishPackageViewportResize = function finishPackageViewportResize(pointerId = null) {
+      const packageUi = ctx.packageUi || null;
+      if (!packageUi || !packageUi.resizeHandle || !packageUi.mouseDrag) {
+        return;
+      }
+
+      if (pointerId != null && packageUi.mouseDrag.pointerId !== pointerId) {
+        return;
+      }
+
+      if (
+        packageUi.mouseDrag.pointerId != null &&
+        typeof packageUi.resizeHandle.hasPointerCapture === "function" &&
+        packageUi.resizeHandle.hasPointerCapture(packageUi.mouseDrag.pointerId)
+      ) {
+        packageUi.resizeHandle.releasePointerCapture(packageUi.mouseDrag.pointerId);
+      }
+
+      packageUi.mouseDrag = null;
+      packageUi.resizeHandle.classList.remove("package-diagram-resizer-active");
+      document.body.classList.remove("package-resize-active");
+    };
+
+    ctx.bindPackageViewportResizeHandle = function bindPackageViewportResizeHandle() {
+      const resizeHandle = document.getElementById("package-diagram-resizer");
+      if (!resizeHandle || resizeHandle.dataset.bound === "true") {
+        return;
+      }
+
+      const resizeBy = (delta) => {
+        const packageUi = ctx.packageUi || null;
+        if (!packageUi) {
+          return;
+        }
+        ctx.setPackageViewportHeight((packageUi.viewportHeight || 0) + delta);
+      };
+
+      resizeHandle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 && event.pointerType !== "touch" && event.pointerType !== "pen") {
+          return;
+        }
+
+        const packageUi = ctx.packageUi || null;
+        if (!packageUi || !packageUi.mountNode || packageUi.resizeHandle !== resizeHandle) {
+          return;
+        }
+
+        event.preventDefault();
+        ctx.hidePackageTooltip();
+        ctx.closePackageFunctionPicker();
+        packageUi.mouseDrag = {
+          pointerId: event.pointerId,
+          startY: event.clientY,
+          startHeight: packageUi.viewportHeight || packageUi.mountNode.getBoundingClientRect().height || 0,
+        };
+        packageUi.resizeHandle.classList.add("package-diagram-resizer-active");
+        document.body.classList.add("package-resize-active");
+
+        if (typeof resizeHandle.setPointerCapture === "function") {
+          resizeHandle.setPointerCapture(event.pointerId);
+        }
+      });
+
+      resizeHandle.addEventListener("pointermove", (event) => {
+        const packageUi = ctx.packageUi || null;
+        if (!packageUi || !packageUi.mouseDrag || packageUi.mouseDrag.pointerId !== event.pointerId) {
+          return;
+        }
+
+        event.preventDefault();
+        const nextHeight = packageUi.mouseDrag.startHeight + (event.clientY - packageUi.mouseDrag.startY);
+        ctx.setPackageViewportHeight(nextHeight);
+      });
+
+      const stopResize = (event) => {
+        if (!event) {
+          ctx.finishPackageViewportResize();
+          return;
+        }
+        ctx.finishPackageViewportResize(event.pointerId);
+      };
+
+      resizeHandle.addEventListener("pointerup", stopResize);
+      resizeHandle.addEventListener("pointercancel", stopResize);
+      resizeHandle.addEventListener("lostpointercapture", stopResize);
+
+      resizeHandle.addEventListener("keydown", (event) => {
+        switch (event.key) {
+          case "ArrowDown":
+            event.preventDefault();
+            resizeBy(24);
+            break;
+          case "ArrowUp":
+            event.preventDefault();
+            resizeBy(-24);
+            break;
+          case "PageDown":
+            event.preventDefault();
+            resizeBy(96);
+            break;
+          case "PageUp":
+            event.preventDefault();
+            resizeBy(-96);
+            break;
+          case "Home": {
+            const bounds = ctx.packageViewportHeightBounds();
+            event.preventDefault();
+            ctx.setPackageViewportHeight(bounds.min);
+            break;
+          }
+          case "End": {
+            const bounds = ctx.packageViewportHeightBounds();
+            event.preventDefault();
+            ctx.setPackageViewportHeight(bounds.max);
+            break;
+          }
+          default:
+            break;
+        }
+      });
+
+      resizeHandle.dataset.bound = "true";
     };
 
     ctx.bindPackageZoomControls = function bindPackageZoomControls() {
@@ -728,6 +879,15 @@
         if (event.key === "Escape") {
           ctx.closePackageFunctionPicker();
         }
+      });
+
+      window.addEventListener("resize", () => {
+        const packageUi = ctx.packageUi || null;
+        if (!packageUi) {
+          return;
+        }
+
+        ctx.setPackageViewportHeight(packageUi.viewportHeight);
       });
 
       ctx.packageGlobalHandlersBound = true;
@@ -1523,6 +1683,7 @@
       const mountNode = document.getElementById("package-diagram");
       const controlsNode = document.getElementById("package-view-controls");
       const subtitleNode = document.getElementById("package-subtitle");
+      const resizeHandle = document.getElementById("package-diagram-resizer");
       if (!mountNode) {
         return;
       }
@@ -1581,11 +1742,13 @@
         highlightedRowIds: new Set(),
         highlightedField: null,
         baseWidth: ctx.packageRendererDefaultWidth(packageModel),
+        defaultBaseWidth: ctx.packageRendererDefaultWidth(packageModel),
         zoom: 1,
         zoomConfig: ctx.packageRendererZoomConfig(packageModel),
         zoomOutButton: zoomControls ? zoomControls.zoomOutButton : null,
         zoomInButton: zoomControls ? zoomControls.zoomInButton : null,
         zoomLabel: zoomControls ? zoomControls.zoomLabel : null,
+        resizeHandle,
         viewportHeight: mountNode.getBoundingClientRect().height || 640,
         mouseDrag: null,
         touchGesture: null,
@@ -1598,9 +1761,8 @@
       stage.append(svg, tooltip, picker);
       mountNode.append(stage);
       ctx.setPackageViewportHeight(ctx.packageUi.viewportHeight);
-      ctx.packageUi.baseWidth = ctx.fitPackageBaseWidthToViewport(ctx.packageUi.baseWidth);
+      ctx.bindPackageViewportResizeHandle();
       ctx.bindPackageZoomControls();
-      ctx.applyPackageZoom();
       ctx.resetPackageDetail();
     };
   };

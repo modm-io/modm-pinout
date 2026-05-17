@@ -205,6 +205,45 @@ body {
   overflow: auto;
 }
 
+.package-diagram-resizer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 0 0;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.package-diagram-resizer::before {
+  content: "";
+  width: min(132px, calc(100% - 32px));
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.package-diagram-resizer:hover::before,
+.package-diagram-resizer:focus-visible::before,
+.package-diagram-resizer-active::before {
+  background: var(--accent);
+  transform: scaleY(1.1);
+}
+
+.package-diagram-resizer:focus-visible {
+  outline: none;
+}
+
+body.package-resize-active,
+body.package-resize-active * {
+  cursor: ns-resize !important;
+  user-select: none;
+}
+
 .package-stage {
   position: relative;
   display: inline-flex;
