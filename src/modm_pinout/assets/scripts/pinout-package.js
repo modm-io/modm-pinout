@@ -503,11 +503,13 @@
       }
 
       const fontSize = clamp((radius * 1.7) / Math.max(label.length * 0.58, 1), 4.5, 9);
+      const labelY = y + 0.5;
       const textNode = svgNode("text", {
         x,
-        y: y + 0.5,
+        y: labelY,
         class: "package-pin-name package-pin-name-grid",
         "font-size": fontSize,
+        transform: `rotate(-45 ${x} ${labelY})`,
       });
       textNode.textContent = label;
       svg.append(textNode);
