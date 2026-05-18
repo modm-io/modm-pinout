@@ -118,6 +118,34 @@ body {
   font-size: 0.9rem;
 }
 
+.repo-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.repo-cta:hover,
+.repo-cta:focus-visible {
+  border-color: var(--accent);
+  text-decoration: none;
+  filter: none;
+}
+
+.repo-cta-header {
+  align-self: flex-start;
+}
+
 .controls {
   display: flex;
   gap: 10px;
@@ -1000,9 +1028,20 @@ button:hover {
   filter: brightness(1.08);
 }
 
+.search-footer {
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+}
+
+.repo-cta-footer {
+  max-width: 100%;
+}
+
 .search-input:focus-visible,
 .search-results:focus-visible,
-.search-button:focus-visible {
+.search-button:focus-visible,
+.repo-cta:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -1024,5 +1063,9 @@ button:hover {
   .search-button {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .repo-cta-header {
+    width: 100%;
   }
 }
