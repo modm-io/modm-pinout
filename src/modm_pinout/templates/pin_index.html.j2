@@ -11,14 +11,14 @@
     <section class="search-shell" aria-label="Device search">
       <div class="search-panel">
         <h1 class="title">modm Pin Mapping</h1>
-        <p class="search-copy">Type the device prefix and open the matching page.</p>
+        <p class="search-copy">Type any part of the device, package, or pin count. Substring and fuzzy matches are supported.</p>
         <form class="search-form" id="device-search-form" autocomplete="off">
           <label class="search-label" for="device-search-input">Device</label>
           <input
             id="device-search-input"
             class="search-input"
             type="search"
-            placeholder="atmega328p"
+            placeholder="stm32f407 lqfp100"
             spellcheck="false"
             autofocus
           >
@@ -39,19 +39,115 @@
       const input = document.getElementById("device-search-input");
       const results = document.getElementById("device-search-results");
       const meta = document.getElementById("device-search-meta");
+      const normalize = (value) => String(value || "").trim().toLowerCase();
+      const compact = (value) => normalize(value).replace(/[^a-z0-9]+/g, "");
       const devices = JSON.parse(dataNode.textContent).map((device) => ({
         ...device,
-        searchKey: String(device.chip_id || "").toLowerCase(),
+        chipKey: normalize(device.chip_id),
+        partKey: normalize(device.partname),
+        packageKey: normalize(device.package_name),
+        pinCountKey: normalize(device.pin_count),
+        compactFields: [device.chip_id, device.partname, device.package_name, device.pin_count]
+          .map(compact)
+          .filter(Boolean),
+        searchText: [device.chip_id, device.partname, device.package_name, device.pin_count]
+          .map(normalize)
+          .filter(Boolean)
+          .join(" "),
+        compactSearchText: compact([device.chip_id, device.partname, device.package_name, device.pin_count].join(" ")),
         label: [device.chip_id, device.package_name].filter(Boolean).join(" | "),
       }));
 
-      function filteredDevices(query) {
-        const normalizedQuery = query.trim().toLowerCase();
+      function fuzzyDistance(query, target) {
+        if (!query || !target) {
+          return null;
+        }
+
+        let queryIndex = 0;
+        let firstMatch = -1;
+        let lastMatch = -1;
+        for (let targetIndex = 0; targetIndex < target.length; targetIndex += 1) {
+          if (target[targetIndex] !== query[queryIndex]) {
+            continue;
+          }
+
+          if (firstMatch === -1) {
+            firstMatch = targetIndex;
+          }
+          lastMatch = targetIndex;
+          queryIndex += 1;
+          if (queryIndex === query.length) {
+            break;
+          }
+        }
+
+        if (queryIndex !== query.length) {
+          return null;
+        }
+
+        return (lastMatch - firstMatch + 1) - query.length;
+      }
+
+      function rankDevice(device, query) {
+        const normalizedQuery = normalize(query);
         if (!normalizedQuery) {
+          return Number.POSITIVE_INFINITY;
+        }
+
+        const compactQuery = compact(normalizedQuery);
+        const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+        let score = Number.NEGATIVE_INFINITY;
+
+        if (device.chipKey === normalizedQuery) {
+          score = Math.max(score, 12000);
+        }
+        if (device.partKey === normalizedQuery) {
+          score = Math.max(score, 11900);
+        }
+        if (device.chipKey.startsWith(normalizedQuery)) {
+          score = Math.max(score, 11000 - device.chipKey.length);
+        }
+        if (device.partKey.startsWith(normalizedQuery)) {
+          score = Math.max(score, 10800 - device.partKey.length);
+        }
+
+        const directIndex = device.searchText.indexOf(normalizedQuery);
+        if (directIndex !== -1) {
+          score = Math.max(score, 9600 - directIndex);
+        }
+
+        if (queryTerms.length > 1 && queryTerms.every((term) => device.searchText.includes(term))) {
+          const spread = queryTerms.reduce((sum, term) => sum + device.searchText.indexOf(term), 0);
+          score = Math.max(score, 9000 - spread);
+        }
+
+        if (compactQuery) {
+          const compactIndex = device.compactSearchText.indexOf(compactQuery);
+          if (compactIndex !== -1) {
+            score = Math.max(score, 8400 - compactIndex);
+          }
+
+          const fuzzyMatches = device.compactFields
+            .map((field) => fuzzyDistance(compactQuery, field))
+            .filter((distance) => distance !== null);
+          if (fuzzyMatches.length > 0) {
+            score = Math.max(score, 7200 - Math.min(...fuzzyMatches));
+          }
+        }
+
+        return Number.isFinite(score) ? score : null;
+      }
+
+      function filteredDevices(query) {
+        if (!normalize(query)) {
           return devices;
         }
 
-        return devices.filter((device) => device.searchKey.startsWith(normalizedQuery));
+        return devices
+          .map((device) => ({ device, score: rankDevice(device, query) }))
+          .filter((entry) => entry.score !== null)
+          .sort((left, right) => right.score - left.score || left.device.chipKey.localeCompare(right.device.chipKey))
+          .map((entry) => entry.device);
       }
 
       function renderOptions(items) {
@@ -98,7 +194,12 @@
         }
       });
 
-      results.addEventListener("change", navigateToSelection);
+      results.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          navigateToSelection();
+        }
+      });
       results.addEventListener("dblclick", navigateToSelection);
 
       form.addEventListener("submit", (event) => {

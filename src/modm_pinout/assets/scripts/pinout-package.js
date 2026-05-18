@@ -607,13 +607,94 @@
       zoomInButton.textContent = "+";
       zoomInButton.setAttribute("aria-label", "Zoom in package diagram");
 
-      controlsNode.append(zoomOutButton, zoomLabel, zoomInButton);
-      return { zoomOutButton, zoomInButton, zoomLabel };
+      const layoutButton = document.createElement("button");
+      layoutButton.type = "button";
+      layoutButton.className = "package-view-toggle-button";
+      layoutButton.textContent = "Left";
+      layoutButton.setAttribute("aria-pressed", "false");
+      layoutButton.setAttribute("aria-label", "Move package view left of the table");
+
+      controlsNode.append(zoomOutButton, zoomLabel, zoomInButton, layoutButton);
+      return { zoomOutButton, zoomInButton, zoomLabel, layoutButton };
+    };
+
+    ctx.applyPackageLayout = function applyPackageLayout(nextMode) {
+      const packageUi = ctx.packageUi || null;
+      const layoutNode = document.getElementById("content-layout");
+      if (!packageUi || !layoutNode) {
+        return;
+      }
+
+      const mode = nextMode === "left" ? "left" : "top";
+      const isLeft = mode === "left";
+      ctx.packageLayoutMode = mode;
+      packageUi.layoutMode = mode;
+      layoutNode.classList.toggle("content-layout-left-package", isLeft);
+      if (!isLeft) {
+        layoutNode.style.gridTemplateColumns = "";
+      }
+
+      if (packageUi.layoutButton) {
+        packageUi.layoutButton.textContent = isLeft ? "Top" : "Left";
+        packageUi.layoutButton.setAttribute("aria-pressed", isLeft ? "true" : "false");
+        packageUi.layoutButton.setAttribute(
+          "aria-label",
+          isLeft ? "Move package view above the table" : "Move package view left of the table",
+        );
+        packageUi.layoutButton.title = isLeft ? "Move package view above the table" : "Move package view left of the table";
+      }
+
+      window.requestAnimationFrame(() => {
+        const activePackageUi = ctx.packageUi || null;
+        if (!activePackageUi) {
+          return;
+        }
+
+        if (activePackageUi.layoutMode === "left") {
+          const layoutWidth = activePackageUi.layoutNode
+            ? activePackageUi.layoutNode.getBoundingClientRect().width
+            : 0;
+          const fallbackWidth = activePackageUi.panelWidth || Math.round(layoutWidth * 0.34) || 420;
+          ctx.setPackagePanelWidth(fallbackWidth);
+        }
+        ctx.setPackageViewportHeight(activePackageUi.viewportHeight);
+        if (ctx.table && typeof ctx.table.redraw === "function") {
+          ctx.table.redraw(true);
+        }
+      });
+    };
+
+    ctx.togglePackageLayout = function togglePackageLayout() {
+      const packageUi = ctx.packageUi || null;
+      if (!packageUi) {
+        return;
+      }
+
+      ctx.applyPackageLayout(packageUi.layoutMode === "left" ? "top" : "left");
     };
 
     ctx.syncPackageViewportResizeHandle = function syncPackageViewportResizeHandle() {
       const packageUi = ctx.packageUi || null;
       if (!packageUi || !packageUi.resizeHandle) {
+        return;
+      }
+
+      const isLeft = packageUi.layoutMode === "left";
+      packageUi.resizeHandle.classList.toggle("package-diagram-resizer-side", isLeft);
+      packageUi.resizeHandle.setAttribute("aria-controls", isLeft ? "package-card" : "package-diagram");
+      packageUi.resizeHandle.setAttribute("aria-orientation", isLeft ? "vertical" : "horizontal");
+      packageUi.resizeHandle.setAttribute(
+        "aria-label",
+        isLeft ? "Resize package panel width" : "Resize package viewport",
+      );
+
+      if (isLeft) {
+        const bounds = ctx.packagePanelWidthBounds();
+        const width = Math.round(packageUi.panelWidth || bounds.min);
+        packageUi.resizeHandle.setAttribute("aria-valuemin", String(bounds.min));
+        packageUi.resizeHandle.setAttribute("aria-valuemax", String(bounds.max));
+        packageUi.resizeHandle.setAttribute("aria-valuenow", String(width));
+        packageUi.resizeHandle.setAttribute("aria-valuetext", `Package panel width ${width} pixels`);
         return;
       }
 
@@ -623,6 +704,41 @@
       packageUi.resizeHandle.setAttribute("aria-valuemax", String(bounds.max));
       packageUi.resizeHandle.setAttribute("aria-valuenow", String(height));
       packageUi.resizeHandle.setAttribute("aria-valuetext", `Package viewport height ${height} pixels`);
+    };
+
+    ctx.packagePanelWidthBounds = function packagePanelWidthBounds() {
+      const packageUi = ctx.packageUi || null;
+      const layoutNode = packageUi && packageUi.layoutNode ? packageUi.layoutNode : document.getElementById("content-layout");
+      const min = 320;
+      if (!layoutNode) {
+        return { min, max: Math.max(min, Math.round(window.innerWidth * 0.6)) };
+      }
+
+      const layoutWidth = Math.max(0, Math.round(layoutNode.getBoundingClientRect().width || layoutNode.clientWidth || 0));
+      const max = Math.max(min, layoutWidth - 360);
+      return { min, max };
+    };
+
+    ctx.setPackagePanelWidth = function setPackagePanelWidth(nextWidth) {
+      const packageUi = ctx.packageUi || null;
+      if (!packageUi || !packageUi.layoutNode) {
+        return;
+      }
+
+      const bounds = ctx.packagePanelWidthBounds();
+      const width = clamp(nextWidth, bounds.min, bounds.max);
+      packageUi.panelWidth = width;
+
+      if (packageUi.layoutMode === "left") {
+        if (window.innerWidth <= 1100) {
+          packageUi.layoutNode.style.gridTemplateColumns = "1fr";
+        } else {
+          packageUi.layoutNode.style.gridTemplateColumns = `${Math.round(width)}px minmax(0, 1fr)`;
+        }
+      }
+
+      ctx.refitPackageToViewport();
+      ctx.syncPackageViewportResizeHandle();
     };
 
     ctx.refitPackageToViewport = function refitPackageToViewport() {
@@ -637,6 +753,19 @@
     };
 
     ctx.packageViewportHeightBounds = function packageViewportHeightBounds() {
+      const packageUi = ctx.packageUi || null;
+      if (packageUi && packageUi.layoutMode === "left" && packageUi.cardNode && packageUi.mountNode) {
+        const cardRect = packageUi.cardNode.getBoundingClientRect();
+        const cardHeight = Math.round(cardRect.height || packageUi.cardNode.offsetHeight || 0);
+        const mountHeight = Math.round(packageUi.mountNode.getBoundingClientRect().height || packageUi.mountNode.offsetHeight || 0);
+        const chromeHeight = Math.max(0, cardHeight - mountHeight);
+        const availableHeight = Math.max(360, Math.round(window.innerHeight - cardRect.top - 12 - chromeHeight));
+        return {
+          min: availableHeight,
+          max: availableHeight,
+        };
+      }
+
       return {
         min: 360,
         max: Math.max(720, Math.round(window.innerHeight * 0.9)),
@@ -677,7 +806,10 @@
 
       packageUi.mouseDrag = null;
       packageUi.resizeHandle.classList.remove("package-diagram-resizer-active");
-      document.body.classList.remove("package-resize-active");
+      document.body.classList.remove("package-resize-active-vertical", "package-resize-active-horizontal");
+      if (ctx.table && typeof ctx.table.redraw === "function") {
+        ctx.table.redraw(true);
+      }
     };
 
     ctx.bindPackageViewportResizeHandle = function bindPackageViewportResizeHandle() {
@@ -691,6 +823,12 @@
         if (!packageUi) {
           return;
         }
+
+        if (packageUi.layoutMode === "left") {
+          ctx.setPackagePanelWidth((packageUi.panelWidth || 0) + delta);
+          return;
+        }
+
         ctx.setPackageViewportHeight((packageUi.viewportHeight || 0) + delta);
       };
 
@@ -707,13 +845,16 @@
         event.preventDefault();
         ctx.hidePackageTooltip();
         ctx.closePackageFunctionPicker();
+        const isLeft = packageUi.layoutMode === "left";
         packageUi.mouseDrag = {
           pointerId: event.pointerId,
+          startX: event.clientX,
           startY: event.clientY,
+          startWidth: packageUi.panelWidth || (packageUi.cardNode ? packageUi.cardNode.getBoundingClientRect().width : 0),
           startHeight: packageUi.viewportHeight || packageUi.mountNode.getBoundingClientRect().height || 0,
         };
         packageUi.resizeHandle.classList.add("package-diagram-resizer-active");
-        document.body.classList.add("package-resize-active");
+        document.body.classList.add(isLeft ? "package-resize-active-horizontal" : "package-resize-active-vertical");
 
         if (typeof resizeHandle.setPointerCapture === "function") {
           resizeHandle.setPointerCapture(event.pointerId);
@@ -727,6 +868,13 @@
         }
 
         event.preventDefault();
+
+        if (packageUi.layoutMode === "left") {
+          const nextWidth = packageUi.mouseDrag.startWidth + (event.clientX - packageUi.mouseDrag.startX);
+          ctx.setPackagePanelWidth(nextWidth);
+          return;
+        }
+
         const nextHeight = packageUi.mouseDrag.startHeight + (event.clientY - packageUi.mouseDrag.startY);
         ctx.setPackageViewportHeight(nextHeight);
       });
@@ -744,12 +892,34 @@
       resizeHandle.addEventListener("lostpointercapture", stopResize);
 
       resizeHandle.addEventListener("keydown", (event) => {
+        const packageUi = ctx.packageUi || null;
+        const isLeft = Boolean(packageUi && packageUi.layoutMode === "left");
         switch (event.key) {
+          case "ArrowRight":
+            if (!isLeft) {
+              break;
+            }
+            event.preventDefault();
+            resizeBy(24);
+            break;
+          case "ArrowLeft":
+            if (!isLeft) {
+              break;
+            }
+            event.preventDefault();
+            resizeBy(-24);
+            break;
           case "ArrowDown":
+            if (isLeft) {
+              break;
+            }
             event.preventDefault();
             resizeBy(24);
             break;
           case "ArrowUp":
+            if (isLeft) {
+              break;
+            }
             event.preventDefault();
             resizeBy(-24);
             break;
@@ -762,15 +932,23 @@
             resizeBy(-96);
             break;
           case "Home": {
-            const bounds = ctx.packageViewportHeightBounds();
+            const bounds = isLeft ? ctx.packagePanelWidthBounds() : ctx.packageViewportHeightBounds();
             event.preventDefault();
-            ctx.setPackageViewportHeight(bounds.min);
+            if (isLeft) {
+              ctx.setPackagePanelWidth(bounds.min);
+            } else {
+              ctx.setPackageViewportHeight(bounds.min);
+            }
             break;
           }
           case "End": {
-            const bounds = ctx.packageViewportHeightBounds();
+            const bounds = isLeft ? ctx.packagePanelWidthBounds() : ctx.packageViewportHeightBounds();
             event.preventDefault();
-            ctx.setPackageViewportHeight(bounds.max);
+            if (isLeft) {
+              ctx.setPackagePanelWidth(bounds.max);
+            } else {
+              ctx.setPackageViewportHeight(bounds.max);
+            }
             break;
           }
           default:
@@ -793,6 +971,11 @@
       packageUi.zoomInButton.addEventListener("click", () => {
         ctx.setPackageZoom(packageUi.zoom + packageUi.zoomConfig.step);
       });
+      if (packageUi.layoutButton) {
+        packageUi.layoutButton.addEventListener("click", () => {
+          ctx.togglePackageLayout();
+        });
+      }
     };
 
     ctx.shouldSuppressPackageClick = function shouldSuppressPackageClick() {
@@ -1686,6 +1869,8 @@
       const controlsNode = document.getElementById("package-view-controls");
       const subtitleNode = document.getElementById("package-subtitle");
       const resizeHandle = document.getElementById("package-diagram-resizer");
+      const layoutNode = document.getElementById("content-layout");
+      const cardNode = document.getElementById("package-card");
       if (!mountNode) {
         return;
       }
@@ -1750,6 +1935,11 @@
         zoomOutButton: zoomControls ? zoomControls.zoomOutButton : null,
         zoomInButton: zoomControls ? zoomControls.zoomInButton : null,
         zoomLabel: zoomControls ? zoomControls.zoomLabel : null,
+        layoutButton: zoomControls ? zoomControls.layoutButton : null,
+        cardNode,
+        layoutNode,
+        layoutMode: ctx.packageLayoutMode === "left" ? "left" : "top",
+        panelWidth: 0,
         resizeHandle,
         viewportHeight: mountNode.getBoundingClientRect().height || 640,
         mouseDrag: null,
@@ -1765,6 +1955,7 @@
       ctx.setPackageViewportHeight(ctx.packageUi.viewportHeight);
       ctx.bindPackageViewportResizeHandle();
       ctx.bindPackageZoomControls();
+      ctx.applyPackageLayout(ctx.packageUi.layoutMode);
       ctx.resetPackageDetail();
     };
   };

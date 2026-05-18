@@ -126,6 +126,16 @@ body {
   margin-bottom: 10px;
 }
 
+.content-layout {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+}
+
+.content-layout-left-package {
+  grid-template-columns: minmax(340px, 34vw) minmax(0, 1fr);
+}
+
 .package-card {
   margin-bottom: 14px;
   padding: 14px;
@@ -133,6 +143,37 @@ body {
   border-radius: 12px;
   background: var(--package-panel-bg);
   backdrop-filter: blur(8px);
+  min-width: 0;
+}
+
+.content-layout-left-package .package-card {
+  position: relative;
+  margin-bottom: 0;
+}
+
+.table-card {
+  min-width: 0;
+  --table-scale: 1;
+  --table-font-size: calc(0.92rem * var(--table-scale));
+  --table-header-font-size: calc(0.88rem * var(--table-scale));
+  --table-input-font-size: calc(0.84rem * var(--table-scale));
+  --table-cell-padding-y: calc(6px * var(--table-scale));
+  --table-cell-padding-x: calc(10px * var(--table-scale));
+}
+
+.table-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.table-view-controls {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .package-card-header {
@@ -195,6 +236,31 @@ body {
   text-align: center;
 }
 
+.package-view-toggle-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.package-view-toggle-button:hover,
+.package-view-toggle-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  filter: none;
+}
+
+.package-view-toggle-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--bg);
+  color: var(--accent);
+}
+
 .package-diagram {
   display: flex;
   justify-content: center;
@@ -238,10 +304,39 @@ body {
   outline: none;
 }
 
-body.package-resize-active,
-body.package-resize-active * {
+body.package-resize-active-vertical,
+body.package-resize-active-vertical * {
   cursor: ns-resize !important;
   user-select: none;
+}
+
+body.package-resize-active-horizontal,
+body.package-resize-active-horizontal * {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+
+.content-layout-left-package .package-diagram-resizer {
+  position: absolute;
+  top: 14px;
+  right: -7px;
+  bottom: 14px;
+  width: 14px;
+  margin-top: 0;
+  padding: 0 0 0 4px;
+  z-index: 3;
+  cursor: ew-resize;
+}
+
+.content-layout-left-package .package-diagram-resizer::before {
+  width: 6px;
+  height: min(132px, calc(100% - 32px));
+}
+
+.content-layout-left-package .package-diagram-resizer:hover::before,
+.content-layout-left-package .package-diagram-resizer:focus-visible::before,
+.content-layout-left-package .package-diagram-resizer-active::before {
+  transform: scaleX(1.1);
 }
 
 .package-stage {
@@ -537,6 +632,11 @@ body.package-resize-active * {
     justify-content: flex-start;
   }
 
+  .table-view-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .package-diagram {
     min-height: 480px;
     height: 480px;
@@ -578,12 +678,20 @@ button:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .content-layout-left-package {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tabulator {
   overflow: hidden !important;
   background: var(--surface);
   color: var(--text);
+  font-size: var(--table-font-size);
 }
 
 .tabulator .tabulator-tableholder {
@@ -606,11 +714,22 @@ button:hover {
   border-right: 1px solid var(--border);
 }
 
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+  padding: calc(5px * var(--table-scale)) calc(8px * var(--table-scale));
+}
+
+.tabulator .tabulator-header .tabulator-col .tabulator-col-title {
+  font-size: var(--table-header-font-size);
+}
+
 .tabulator .tabulator-header .tabulator-col input,
 .tabulator .tabulator-header .tabulator-col select {
   background: var(--input-bg);
   color: var(--text);
   border: 1px solid var(--input-border);
+  min-height: calc(28px * var(--table-scale));
+  padding: calc(4px * var(--table-scale)) calc(6px * var(--table-scale));
+  font-size: var(--table-input-font-size);
 }
 
 .tabulator .tabulator-header .tabulator-col input::placeholder {
@@ -647,6 +766,8 @@ button:hover {
 .tabulator .tabulator-row .tabulator-cell {
   color: var(--text);
   border-right: 1px solid var(--border);
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  font-size: var(--table-font-size);
 }
 
 .tabulator-row .tabulator-cell.tabulator-editing {
@@ -659,6 +780,7 @@ button:hover {
   background: var(--input-bg);
   color: var(--text);
   border: 1px solid var(--input-border);
+  font-size: var(--table-input-font-size);
 }
 
 .tabulator-row .tabulator-cell.tabulator-editing input::placeholder {
@@ -671,6 +793,7 @@ button:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  font-size: var(--table-font-size);
 }
 
 .tabulator-edit-list .tabulator-edit-list-item {

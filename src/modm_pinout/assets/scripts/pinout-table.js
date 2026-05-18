@@ -1,10 +1,91 @@
 "use strict";
 
 (function registerModmPinoutTable(global) {
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
   const api = global.ModmPinout = global.ModmPinout || {};
 
   api.attachTable = function attachTable(ctx) {
     const state = ctx.state;
+
+    ctx.renderTableZoomControls = function renderTableZoomControls() {
+      const controlsNode = document.getElementById("table-view-controls");
+      if (!controlsNode) {
+        return null;
+      }
+
+      controlsNode.replaceChildren();
+
+      const zoomOutButton = document.createElement("button");
+      zoomOutButton.type = "button";
+      zoomOutButton.className = "package-zoom-button";
+      zoomOutButton.textContent = "-";
+      zoomOutButton.setAttribute("aria-label", "Zoom out table view");
+
+      const zoomLabel = document.createElement("div");
+      zoomLabel.className = "package-zoom-label";
+      zoomLabel.setAttribute("aria-hidden", "true");
+
+      const zoomInButton = document.createElement("button");
+      zoomInButton.type = "button";
+      zoomInButton.className = "package-zoom-button";
+      zoomInButton.textContent = "+";
+      zoomInButton.setAttribute("aria-label", "Zoom in table view");
+
+      controlsNode.append(zoomOutButton, zoomLabel, zoomInButton);
+      return { zoomOutButton, zoomInButton, zoomLabel };
+    };
+
+    ctx.applyTableZoom = function applyTableZoom() {
+      const tableUi = ctx.tableUi || null;
+      if (!tableUi || !tableUi.cardNode) {
+        return;
+      }
+
+      const zoom = clamp(tableUi.zoom, tableUi.zoomConfig.min, tableUi.zoomConfig.max);
+      tableUi.zoom = zoom;
+      tableUi.cardNode.style.setProperty("--table-scale", zoom.toFixed(2));
+
+      if (tableUi.zoomLabel) {
+        tableUi.zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      }
+      if (tableUi.zoomOutButton) {
+        tableUi.zoomOutButton.disabled = zoom <= tableUi.zoomConfig.min + 0.001;
+      }
+      if (tableUi.zoomInButton) {
+        tableUi.zoomInButton.disabled = zoom >= tableUi.zoomConfig.max - 0.001;
+      }
+
+      if (ctx.table && typeof ctx.table.redraw === "function") {
+        ctx.table.redraw(true);
+      }
+    };
+
+    ctx.setTableZoom = function setTableZoom(nextZoom) {
+      const tableUi = ctx.tableUi || null;
+      if (!tableUi) {
+        return;
+      }
+
+      tableUi.zoom = nextZoom;
+      ctx.applyTableZoom();
+    };
+
+    ctx.bindTableZoomControls = function bindTableZoomControls() {
+      const tableUi = ctx.tableUi || null;
+      if (!tableUi || !tableUi.zoomOutButton || !tableUi.zoomInButton) {
+        return;
+      }
+
+      tableUi.zoomOutButton.addEventListener("click", () => {
+        ctx.setTableZoom(tableUi.zoom - tableUi.zoomConfig.step);
+      });
+      tableUi.zoomInButton.addEventListener("click", () => {
+        ctx.setTableZoom(tableUi.zoom + tableUi.zoomConfig.step);
+      });
+    };
 
     ctx.manualEditorParams = function manualEditorParams(cell) {
       const row = cell.getRow().getData();
@@ -200,6 +281,17 @@
 
     ctx.initializeTable = async function initializeTable() {
       const initialStateResult = await ctx.loadInitialState();
+      const tableControls = ctx.renderTableZoomControls();
+      ctx.tableUi = {
+        cardNode: document.getElementById("table-card"),
+        zoom: 1,
+        zoomConfig: { min: 0.85, max: 1.6, step: 0.15 },
+        zoomOutButton: tableControls ? tableControls.zoomOutButton : null,
+        zoomInButton: tableControls ? tableControls.zoomInButton : null,
+        zoomLabel: tableControls ? tableControls.zoomLabel : null,
+      };
+      ctx.bindTableZoomControls();
+      ctx.applyTableZoom();
 
       const baseColumns = [
         {

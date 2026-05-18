@@ -25,29 +25,37 @@
       <span id="save-status" class="save-status" aria-live="polite"></span>
     </section>
 
-    {% if has_package %}
-    <section class="package-card" aria-labelledby="package-title">
-      <div class="package-card-header">
-        <div>
-          <h2 id="package-title" class="section-title">Package Layout</h2>
-          <div id="package-subtitle" class="package-subtitle"></div>
+    <div id="content-layout" class="content-layout">
+      {% if has_package %}
+      <section id="package-card" class="package-card" aria-labelledby="package-title">
+        <div class="package-card-header">
+          <div>
+            <h2 id="package-title" class="section-title">Package Layout</h2>
+            <div id="package-subtitle" class="package-subtitle"></div>
+          </div>
+          <div id="package-view-controls" class="package-view-controls" aria-label="Package view controls"></div>
         </div>
-        <div id="package-view-controls" class="package-view-controls" aria-label="Package zoom controls"></div>
-      </div>
-      <div id="package-diagram" class="package-diagram" role="img" aria-label="Graphical package layout"></div>
-      <div
-        id="package-diagram-resizer"
-        class="package-diagram-resizer"
-        role="separator"
-        aria-controls="package-diagram"
-        aria-label="Resize package viewport"
-        aria-orientation="horizontal"
-        tabindex="0"
-      ></div>
-    </section>
-    {% endif %}
+        <div id="package-diagram" class="package-diagram" role="img" aria-label="Graphical package layout"></div>
+        <div
+          id="package-diagram-resizer"
+          class="package-diagram-resizer"
+          role="separator"
+          aria-controls="package-diagram"
+          aria-label="Resize package viewport"
+          aria-orientation="horizontal"
+          tabindex="0"
+        ></div>
+      </section>
+      {% endif %}
 
-    <section id="pin-matrix"></section>
+      <section id="table-card" class="table-card" aria-labelledby="table-title">
+        <div class="table-card-header">
+          <h2 id="table-title" class="section-title">Pin Matrix</h2>
+          <div id="table-view-controls" class="table-view-controls" aria-label="Table view controls"></div>
+        </div>
+        <div id="pin-matrix"></div>
+      </section>
+    </div>
 
     <p class="hint">
       {% if has_package %}
