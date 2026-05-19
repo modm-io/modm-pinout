@@ -13,7 +13,8 @@ from modm_devices.parser import DeviceParser
 from .resources import device_resource_file
 
 
-GPIO_NAME_RE = re.compile(r"\bP(?P<port>[A-Z])(?P<pin>\d+)\b")
+GPIO_ALPHA_NAME_RE = re.compile(r"\bP(?P<port>[A-Z])(?P<pin>\d+)\b")
+GPIO_NUMERIC_NAME_RE = re.compile(r"\bP(?P<port>\d+)[._](?P<pin>\d+)\b")
 
 
 def _pin_sort_key(pin_key: object) -> tuple[int, int | str]:
@@ -57,6 +58,13 @@ def _dedupe_preserving_order(values: list[str]) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def _normalize_gpio_pin(pin: Any) -> str:
+    normalized = str(pin or "").strip()
+    if normalized.isdigit():
+        return str(int(normalized))
+    return normalized
 
 
 @lru_cache(maxsize=1)
@@ -103,10 +111,14 @@ def _select_package(gpio_driver: dict[str, Any], chip_id: str) -> dict[str, Any]
 
 
 def _extract_gpio_key(pin_name: str) -> tuple[str, str] | None:
-    match = GPIO_NAME_RE.search(pin_name.upper())
+    normalized_name = pin_name.strip().upper()
+
+    match = GPIO_ALPHA_NAME_RE.search(normalized_name)
+    if match is None:
+        match = GPIO_NUMERIC_NAME_RE.search(normalized_name)
     if match is None:
         return None
-    return (match.group("port").lower(), match.group("pin"))
+    return (match.group("port").lower(), _normalize_gpio_pin(match.group("pin")))
 
 
 def _format_signal(signal: dict[str, Any]) -> str:
@@ -120,7 +132,56 @@ def _format_signal(signal: dict[str, Any]) -> str:
     return f"{prefix}_{name}" if name else prefix
 
 
-def _functions_for_gpio(gpio_node: dict[str, Any]) -> list[str]:
+def _driver_signal_name(signal: Any) -> str:
+    if isinstance(signal, dict):
+        return str(signal.get("name") or "").strip()
+    return str(signal or "").strip()
+
+
+def _driver_instance_values(driver: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for instance in _as_list(driver.get("instance")):
+        if isinstance(instance, dict):
+            value = instance.get("value")
+        else:
+            value = instance
+
+        normalized = str(value or "").strip()
+        if normalized:
+            values.append(normalized)
+
+    return _dedupe_preserving_order(values)
+
+
+def _functions_for_driver_signals(driver: dict[str, Any]) -> list[str]:
+    driver_name = str(driver.get("name") or "").strip()
+    if not driver_name:
+        return []
+
+    signal_names = _dedupe_preserving_order(
+        [_driver_signal_name(signal) for signal in _as_list(driver.get("signal"))]
+    )
+    if not signal_names:
+        return []
+
+    labels: list[str] = []
+    instance_values = _driver_instance_values(driver)
+    if instance_values:
+        for instance in instance_values:
+            for signal_name in signal_names:
+                label = _format_signal({"driver": driver_name, "instance": instance, "name": signal_name})
+                if label:
+                    labels.append(label)
+    else:
+        for signal_name in signal_names:
+            label = _format_signal({"driver": driver_name, "name": signal_name})
+            if label:
+                labels.append(label)
+
+    return _dedupe_preserving_order(labels)
+
+
+def _functions_for_gpio(gpio_node: dict[str, Any], shared_functions: list[str] | None = None) -> list[str]:
     alt_groups: dict[int, list[str]] = defaultdict(list)
     add_fns: list[str] = []
 
@@ -145,21 +206,39 @@ def _functions_for_gpio(gpio_node: dict[str, Any]) -> list[str]:
         for af_key in sorted(alt_groups)
         if _dedupe_preserving_order(alt_groups[af_key])
     ]
-    return _merge_functions(alt_fns, _dedupe_preserving_order(add_fns))
+    local_functions = _merge_functions(alt_fns, _dedupe_preserving_order(add_fns))
+    if not shared_functions:
+        return local_functions
+    return _merge_functions(local_functions, shared_functions)
+
+
+def _shared_functions_for_device(device: Any) -> list[str]:
+    platform = str(device.identifier.get("platform") or "").strip().lower()
+    if platform != "nrf":
+        return []
+
+    functions: list[str] = []
+    for driver in device.properties.get("driver", []):
+        functions.extend(_functions_for_driver_signals(driver))
+    return _dedupe_preserving_order(functions)
 
 
 def _gpio_lookup(gpio_driver: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     lookup: dict[tuple[str, str], dict[str, Any]] = {}
     for gpio in _as_list(gpio_driver.get("gpio")):
         port = str(gpio.get("port") or "").strip().lower()
-        pin = str(gpio.get("pin") or "").strip()
+        pin = _normalize_gpio_pin(gpio.get("pin"))
         if not port or not pin:
             continue
         lookup[(port, pin)] = gpio
     return lookup
 
 
-def _rows_from_package(package: dict[str, Any], gpio_by_name: dict[tuple[str, str], dict[str, Any]]) -> list[dict[str, Any]]:
+def _rows_from_package(
+    package: dict[str, Any],
+    gpio_by_name: dict[tuple[str, str], dict[str, Any]],
+    shared_functions: list[str],
+) -> list[dict[str, Any]]:
     pin_nodes = sorted(
         (
             pin_node
@@ -175,7 +254,7 @@ def _rows_from_package(package: dict[str, Any], gpio_by_name: dict[tuple[str, st
         short_name = str(pin_node.get("name") or "").strip()
         gpio_key = _extract_gpio_key(short_name)
         gpio_node = gpio_by_name.get(gpio_key) if gpio_key else None
-        functions = _functions_for_gpio(gpio_node) if gpio_node else []
+        functions = _functions_for_gpio(gpio_node, shared_functions) if gpio_node else []
 
         rows.append(
             {
@@ -226,7 +305,7 @@ def _package_pins_from_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return package_pins
 
 
-def _rows_from_gpio_driver(gpio_driver: dict[str, Any]) -> list[dict[str, Any]]:
+def _rows_from_gpio_driver(gpio_driver: dict[str, Any], shared_functions: list[str]) -> list[dict[str, Any]]:
     prepared_rows: list[dict[str, Any]] = []
 
     for gpio_node in _as_list(gpio_driver.get("gpio")):
@@ -242,7 +321,7 @@ def _rows_from_gpio_driver(gpio_driver: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "position": position,
                 "short_name": short_name or position,
-                "functions": _functions_for_gpio(gpio_node),
+                "functions": _functions_for_gpio(gpio_node, shared_functions),
             }
         )
 
@@ -267,15 +346,16 @@ def load_device_pin_data(chip_id: str, source_xml: str) -> tuple[str, dict[str, 
         return (str(device.partname), None, [])
 
     gpio_by_name = _gpio_lookup(gpio_driver)
+    shared_functions = _shared_functions_for_device(device)
 
     packages = _as_list(gpio_driver.get("package"))
     package = None
     rows: list[dict[str, Any]] = []
     if packages and any(_as_list(candidate.get("pin")) for candidate in packages):
         package = _select_package(gpio_driver, chip_id)
-        rows = _rows_from_package(package, gpio_by_name)
+        rows = _rows_from_package(package, gpio_by_name, shared_functions)
     else:
-        rows = _rows_from_gpio_driver(gpio_driver)
+        rows = _rows_from_gpio_driver(gpio_driver, shared_functions)
 
     public_rows = [
         {key: value for key, value in row.items() if key != "package_pin_type"}
